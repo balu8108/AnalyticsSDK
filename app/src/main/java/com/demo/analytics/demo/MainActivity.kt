@@ -6,6 +6,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
@@ -25,7 +26,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -45,89 +45,88 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun DemoScreen() {
     val server by DemoServer.state.collectAsState()
     var mode by remember { mutableStateOf(DemoServer.mode) }
-    var tracked by remember { mutableIntStateOf(0) }
+    val tracked by DemoTracker.tracked.collectAsState()
 
     Scaffold { padding ->
-        Column(
-            modifier = Modifier.fillMaxSize().padding(padding).padding(16.dp),
+        // One scrolling list for everything, so the controls still fit in landscape.
+        LazyColumn(
+            modifier = Modifier.fillMaxSize().padding(padding),
+            contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text("Analytics SDK", style = MaterialTheme.typography.headlineSmall)
-            Text(
-                "Sends every 5s, or sooner at 100 queued events. Going to the background flushes " +
-                    "right away and schedules WorkManager. SDK logs are in Logcat under AnalyticsSDK.",
-                style = MaterialTheme.typography.bodySmall,
-            )
-
-            Card(Modifier.fillMaxWidth()) {
-                Row(
-                    Modifier.fillMaxWidth().padding(12.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                ) {
-                    Stat("Tracked", tracked)
-                    Stat("Received by server", server.received)
-                }
+            item { Controls(tracked, server.received, mode, onModeChange = { mode = it }) }
+            item { HorizontalDivider() }
+            items(server.log) { line ->
+                Text(line, style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace)
             }
+        }
+    }
+}
 
-            Text("Server", style = MaterialTheme.typography.titleSmall)
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                ServerMode.entries.forEach { option ->
-                    FilterChip(
-                        selected = mode == option,
-                        onClick = {
-                            mode = option
-                            DemoServer.mode = option
-                            DemoServer.log("server: ${option.label}")
-                        },
-                        label = { Text(option.label) },
-                    )
-                }
-            }
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun Controls(tracked: Int, received: Int, mode: ServerMode, onModeChange: (ServerMode) -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text("Analytics SDK", style = MaterialTheme.typography.headlineSmall)
+        Text(
+            "Sends every 5s, or sooner at 100 queued events. Going to the background flushes " +
+                "right away and schedules WorkManager. SDK logs are in Logcat under AnalyticsSDK.",
+            style = MaterialTheme.typography.bodySmall,
+        )
 
-            FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+        Card(Modifier.fillMaxWidth()) {
+            Row(
+                Modifier.fillMaxWidth().padding(12.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
             ) {
-                Button(onClick = {
-                    AnalyticsSDK.sendAnalyticsEvent("button_tap", mapOf("screen" to "demo"))
-                    tracked++
-                }) { Text("Track event") }
+                Stat("Tracked", tracked)
+                Stat("Received by server", received)
+            }
+        }
 
-                Button(onClick = {
-                    // Many threads writing at once is the case the lock-free queue is for.
-                    repeat(8) { t ->
-                        thread(name = "producer-$t") {
-                            repeat(125) { i ->
-                                AnalyticsSDK.sendAnalyticsEvent("burst", mapOf("thread" to t, "i" to i))
-                            }
+        Text("Server", style = MaterialTheme.typography.titleSmall)
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            ServerMode.entries.forEach { option ->
+                FilterChip(
+                    selected = mode == option,
+                    onClick = {
+                        onModeChange(option)
+                        DemoServer.mode = option
+                        DemoServer.log("server: ${option.label}")
+                    },
+                    label = { Text(option.label) },
+                )
+            }
+        }
+
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Button(onClick = {
+                DemoTracker.track("button_tap", mapOf("screen" to "demo"))
+            }) { Text("Track event") }
+
+            Button(onClick = {
+                // Many threads writing at once is the case the lock-free queue is for.
+                repeat(8) { t ->
+                    thread(name = "producer-$t") {
+                        repeat(125) { i ->
+                            DemoTracker.track("burst", mapOf("thread" to t, "i" to i))
                         }
                     }
-                    tracked += 1_000
-                    DemoServer.log("burst of 1000 events from 8 threads")
-                }) { Text("Burst 1000") }
-
-                OutlinedButton(onClick = {
-                    AnalyticsSDK.flush()
-                    DemoServer.log("flush requested")
-                }) { Text("Flush now") }
-            }
-
-            HorizontalDivider()
-            LazyColumn(Modifier.fillMaxWidth().weight(1f)) {
-                items(server.log) { line ->
-                    Text(
-                        line,
-                        style = MaterialTheme.typography.bodySmall,
-                        fontFamily = FontFamily.Monospace,
-                        modifier = Modifier.padding(vertical = 2.dp),
-                    )
                 }
-            }
+                DemoServer.log("burst of 1000 events from 8 threads")
+            }) { Text("Burst 1000") }
+
+            OutlinedButton(onClick = {
+                AnalyticsSDK.flush()
+                DemoServer.log("flush requested")
+            }) { Text("Flush now") }
         }
     }
 }

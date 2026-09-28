@@ -6,6 +6,7 @@ import kotlinx.coroutines.flow.update
 import org.json.JSONObject
 import java.io.BufferedInputStream
 import java.io.DataInputStream
+import java.io.IOException
 import java.io.InputStream
 import java.net.InetAddress
 import java.net.ServerSocket
@@ -40,7 +41,13 @@ object DemoServer {
 
     fun start() {
         thread(name = "demo-server", isDaemon = true) {
-            ServerSocket(8080, 50, InetAddress.getByName("127.0.0.1")).use { server ->
+            val server = try {
+                ServerSocket(8080, 50, InetAddress.getByName("127.0.0.1"))
+            } catch (e: IOException) {
+                log("couldn't start the server on port 8080: ${e.message}")
+                return@thread
+            }
+            server.use {
                 while (true) {
                     runCatching { server.accept().use(::handle) }
                 }

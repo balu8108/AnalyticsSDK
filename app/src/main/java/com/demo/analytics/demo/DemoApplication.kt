@@ -9,6 +9,6 @@ class DemoApplication : Application() {
         super.onCreate()
         DemoServer.start()
         AnalyticsSDK.init(this, DemoServer.URL, AnalyticsConfig(maxAttempts = 4))
-        AnalyticsSDK.sendAnalyticsEvent("app_open")
+        DemoTracker.track("app_open")
     }
 }
